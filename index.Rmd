@@ -1,0 +1,96 @@
+Coursera Practical Machine Learning Final Project
+========================================================
+
+```{r cache=TRUE, echo=FALSE, warn.conflicts = FALSE}
+## Setup
+library(caret)
+library(kernlab)
+library(ISLR)
+library(ggplot2)
+library(Hmisc)
+library(rattle)
+library(rpart)
+library(party)
+library(tree)
+library(pgmm)
+library(gbm)
+library(lubridate) 
+library(forecast)
+library(hydroGOF)
+
+set.seed(2358)
+```
+
+## Introduction
+
+Using various devices it is now possible to collect a large amount of data about personal activity. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. The goal of this project is to predict the manner in which they did the exercise. 
+
+The data for this project come from http://groupware.les.inf.puc-rio.br/har. Data were collected from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. These six young healthy participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. The exercises were performed by six male participants aged between 20-28 years, with little weight lifting experience.
+
+## Data Pre-Processing
+
+The dataset contains 19,622 observations of 160 variables. The outcome variable that the project aims to predict for the test set is "classe." Since the initial number of variables is too large, let's use 2 different functions to remove some variables. First, using nearZeroVar(), we identify the variables that have variance close to zero. Second, we use is.na() combined with other functions to identify the columns that contain more than 1,000 entries (almost 20% of the observations) with NAs. The resulting dataset contains 60 variables. 
+
+```{r cache=TRUE, echo=TRUE, warn.conflicts = FALSE}
+testing <- read.csv("pml-testing.csv", header=TRUE)
+
+allData <- read.csv("pml-training.csv", header=TRUE)
+removeNearZeroVarColumns <- nearZeroVar(allData)
+allData <- subset(allData, select = -c(removeNearZeroVarColumns[-1]) )
+
+removeNAMajorityColumns <- which(colSums(is.na(allData)) > 1000)
+allData <- subset(allData, select = -c(removeNAMajorityColumns))
+```
+
+In order to perform cross validation to confirm that the model is chosen successfully, we split the resulting dataset into two, training and validation. In our initial attempts to create the model we used p=0.75, which meant that about 75% of data was in the training set. However, the dataset was too large to create a model and the algorithm ran for more than 2 hours. After trying various values we chose p=0.25 which still guaranteed the training set to be around 5,000 observations. 
+
+```{r cache=TRUE, echo=TRUE, warn.conflicts = FALSE}
+inTrain <- createDataPartition(y=allData$classe, p=0.25, list=FALSE)
+training <- allData[inTrain,]
+validation <- allData[-inTrain,]
+nrow(training)
+nrow(validation)
+```
+
+## Model
+
+For the final model we use Principal Components Analysis and Random Forests. Since initial data pre-processing, described earlier, did not eliminate enough variables, Principal Components Analysis enables to narrow down the number of variables further by using weighted combination of predictors instead. Random Forest seems to be the most appropriate method since it has high accuracy. The given dataset should not be affected by the negative side effects typical for Random Forests. While speed is an issue for this method, having training dataset of about 5,000 works well. Since the interpretability is not the goal of this project, we can ignore this side effect. The issue of overfitting is dealt with during cross validation. 
+
+```{r cache=TRUE, echo=TRUE, warn.conflicts = FALSE}
+training$classe <- as.factor(training$classe)
+modFit <- train(classe~., data=training, method="rf", prox=TRUE, preProcess="pca", na.omit=TRUE)
+```
+
+## Cross Validation
+
+During data pre-processing the intial set was split into training and validation set, so that the model can be built on the training set and then evaluated against the validation set. The cross validation is especially important for the chosen model given the potential side effect of Random Forests overfitting. 
+
+We use predict() funciton in order to predict the outcome variable classe for the validation set. Using confusionMatrix() function we compare the predicted outcome with the one that was actually obeserved in the validation set. 
+
+```{r cache=TRUE, echo=TRUE, warn.conflicts = FALSE}
+confusionMatrix(validation$classe,predict(modFit, validation))
+```
+
+The accuracy being 96% suggests that this is a good model. 
+
+
+## Expected Out-Of-Sample Error
+
+Based on the confusionMatrix() and Accuracy above, the expected out-of-sample error is about 4%.
+
+```{r cache=TRUE, echo=FALSE, warn.conflicts = FALSE}
+# To be submitted separately on the Coursera Website
+
+answers <-as.character(predict(modFit, testing))
+
+# Function provided by the instructor
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(answers)
+```
